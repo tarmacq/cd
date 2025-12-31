@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>tarmacq | CDN Hosting</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js"></script>
+
+    <style>
+        :root {
+            --bg-dark: #050511;
+            --purple-glow: #5b2fa6;
+            --text-white: #ffffff;
+            --text-gray: #a1a1aa;
+            --card-glass: rgba(255, 255, 255, 0.05);
+            --accent-pink: #ec4899;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Outfit', sans-serif; }
+        body { background-color: var(--bg-dark); color: var(--text-white); min-height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+
+        .background-gradient {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1;
+            background: radial-gradient(circle at 10% 10%, rgba(255, 208, 150, 0.1) 0%, transparent 60%),
+                        radial-gradient(circle at 80% 50%, rgba(76, 29, 149, 0.3) 0%, transparent 60%),
+                        linear-gradient(135deg, #1e1b4b 0%, #020617 100%);
+        }
+
+        .glass-card {
+            background: var(--card-glass); backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 24px; padding: 3rem; width: 90%; max-width: 500px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5); text-align: center;
+        }
+
+        #dashboard, #auth-overlay { display: none; }
+
+        h1 { font-size: 2rem; margin-bottom: 0.5rem; background: linear-gradient(90deg, #fff, #a1a1aa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        p { color: var(--text-gray); margin-bottom: 1.5rem; font-size: 0.9rem; }
+
+        .btn-action {
+            background: linear-gradient(90deg, #5b2fa6, #ec4899);
+            color: white; border: none; padding: 1rem 2rem; border-radius: 50px;
+            font-weight: 600; cursor: pointer; width: 100%; transition: 0.3s;
+            text-decoration: none; margin-top: 10px;
+        }
+        .btn-action:hover { transform: scale(1.03); box-shadow: 0 0 20px rgba(236, 72, 153, 0.4); }
+
+        .url-display {
+            background: rgba(0,0,0,0.3); padding: 1rem; border-radius: 12px;
+            margin-top: 1.5rem; border: 1px solid var(--accent-pink); display: none;
+        }
+        input { background: transparent; border: none; color: #3ecf8e; width: 100%; text-align: center; font-family: monospace; }
+    </style>
+</head>
+<body>
+
+    <div class="background-gradient"></div>
+
+    <div class="glass-card">
+        <div id="auth-overlay">
+            <i class="fa-solid fa-user-shield" style="font-size: 3rem; color: var(--accent-pink); margin-bottom: 1rem;"></i>
+            <h1>Access Denied</h1>
+            <p>Please authenticate via tarmacq auth to host images.</p>
+            <a href="https://auth.tarmacq.com" class="btn-action">Login to tarmacq</a>
+        </div>
+
+        <div id="dashboard">
+            <h1 style="color:var(--accent-pink)">cd.tarmacq.com</h1>
+            <p>Direct Image Hosting API</p>
+            
+            <input type="file" id="fileInput" accept="image/*" style="display: none;">
+            <button class="btn-action" id="selectBtn" style="background: rgba(255,255,255,0.1); margin-bottom: 10px;">
+                <i class="fa-solid fa-file-image"></i> Select Photo
+            </button>
+            
+            <button id="uploadBtn" class="btn-action">
+                <i class="fa-solid fa-cloud-arrow-up"></i> Upload to CDN
+            </button>
+
+            <div id="status" style="margin-top: 1rem; font-size: 0.8rem;"></div>
+
+            <div class="url-display" id="urlBox">
+                <p style="margin-bottom: 5px; font-size: 0.7rem; color: white;">CUSTOM URL GENERATED:</p>
+                <input type="text" id="finalUrl" readonly>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const PROJECT_URL = 'https://ulhwmqhxppuhqtoujmum.supabase.co';
+        const ANON_KEY = 'sb_publishable_F0QWv6J1ienKfeJSmHPX8Q_BcSVNQX3';
+        const CUSTOM_BASE = 'https://cd.tarmacq.com/uploads/img/';
+
+        const supabase = window.supabase.createClient(PROJECT_URL, ANON_KEY);
+
+        // Elements
+        const uploadBtn = document.getElementById('uploadBtn');
+        const fileInput = document.getElementById('fileInput');
+        const selectBtn = document.getElementById('selectBtn');
+        const status = document.getElementById('status');
+        const urlBox = document.getElementById('urlBox');
+        const finalUrl = document.getElementById('finalUrl');
+
+        // Initial Auth Check
+        window.addEventListener('DOMContentLoaded', async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) {
+                document.getElementById('dashboard').style.display = 'block';
+            } else {
+                document.getElementById('auth-overlay').style.display = 'block';
+            }
+        });
+
+        // Event Listeners
+        selectBtn.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', () => {
+            status.innerText = `Ready: ${fileInput.files[0].name}`;
+        });
+
+        uploadBtn.addEventListener('click', async () => {
+            if (!fileInput.files[0]) return alert("Select a file first");
+
+            try {
+                uploadBtn.disabled = true;
+                status.innerText = "Processing & Compressing...";
+
+                // 1. Compression
+                const options = { maxSizeMB: 0.2, maxWidthOrHeight: 1920, useWebWorker: true };
+                const compressed = await imageCompression(fileInput.files[0], options);
+
+                // 2. Upload
+                const fileExt = fileInput.files[0].name.split('.').pop();
+                const fileName = `${Date.now()}.${fileExt}`;
+                
+                status.innerText = "Uploading to Storage...";
+                const { data, error } = await supabase.storage
+                    .from('photos')
+                    .upload(fileName, compressed);
+
+                if (error) throw error;
+
+                // 3. Generate Custom Domain Link
+                const customLink = CUSTOM_BASE + fileName;
+                
+                status.innerHTML = `<span style="color:#3ecf8e">Upload Successful!</span>`;
+                urlBox.style.display = 'block';
+                finalUrl.value = customLink;
+
+            } catch (err) {
+                status.innerText = `Error: ${err.message}`;
+            } finally {
+                uploadBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
